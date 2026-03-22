@@ -10,3 +10,19 @@ Open-Memo 是一个精简的 AI 备忘录，能够主动提醒日常安排，交
 - **自然语言理解**
 - **任务进度交流**
 - **智能调整建议**
+
+## Bootstrap
+
+当前仓库已整理为一个最小可运行的 pnpm monorepo 基线，优先提供：
+
+- `docs/contracts.md`：统一数据契约与边界
+- `data/HEARTBEAT.md`：Markdown 样例任务数据
+- `packages/shared`：共享 TypeScript 类型壳
+
+## Development
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm build
+```

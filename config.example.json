@@ -1,0 +1,39 @@
+{
+  "llm": {
+    "defaultProfile": "local-dev",
+    "profiles": {
+      "local-dev": {
+        "provider": "openai-compatible",
+        "baseUrl": "http://127.0.0.1:11434/v1",
+        "model": "placeholder-model",
+        "apiKey": "YOUR_API_KEY"
+      },
+      "backup": {
+        "provider": "openai-compatible",
+        "baseUrl": "https://example.invalid/v1",
+        "model": "fallback-model",
+        "apiKey": "YOUR_API_KEY"
+      }
+    }
+  },
+  "notifier": {
+    "priority": [
+      "system",
+      "browser",
+      "ai_chat"
+    ]
+  },
+  "heartbeat": {
+    "intervalSeconds": 60
+  },
+  "paths": {
+    "dataDir": "./data",
+    "heartbeatFile": "./data/HEARTBEAT.md",
+    "memoryDir": "./data/memory"
+  },
+  "dailyFlush": {
+    "enabled": true,
+    "hour": 2,
+    "timezone": "Asia/Shanghai"
+  }
+}
