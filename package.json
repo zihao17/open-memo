@@ -9,6 +9,12 @@
     "typecheck": "tsc -p packages/shared/tsconfig.json --noEmit && tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/integrations/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "tsx": "^4.19.0",
     "typescript": "^5.8.2"
+  },
+  "scripts": {
+    "build": "tsc -p packages/shared/tsconfig.json && tsc -p packages/core/tsconfig.json && tsc -p packages/integrations/tsconfig.json && tsc -p apps/api/tsconfig.json && tsc -p apps/web/tsconfig.json",
+    "typecheck": "tsc -p packages/shared/tsconfig.json --noEmit && tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/integrations/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
+    "smoke": "tsx packages/integrations/src/demo/smoke.ts"
   }
 }
