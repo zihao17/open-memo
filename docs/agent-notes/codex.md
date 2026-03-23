@@ -904,3 +904,130 @@ Use this prompt to resume work cleanly:
 
 - The smoke test temporarily mutated `data/HEARTBEAT.md` during POST/PATCH/DELETE verification
 - The file was restored to its pre-test contents after validation, so this round should leave only code/doc/lockfile changes
+
+## Phase-3 Core Round - 2026-03-23
+
+### Worktree
+
+- Worktree label: `feat/p2-core`
+- Local path: `E:\AI\open\open-memo.worktrees\feat\p2-core`
+- Agent: `codex`
+- Scope for this round:
+  - fix P1-1 body text loss
+  - extend core tests
+  - add task classifier + API route
+  - harden Windows atomic write retry path
+
+### Context Read
+
+- Requested file `docs/phase3-plan.md` was not present in this worktree
+- Work proceeded from:
+  - the user task list in chat
+  - `docs/contracts.md`
+  - `packages/shared/src/types.ts`
+  - `packages/core/src/heartbeat-markdown.ts`
+  - `packages/core/src/constants.ts`
+  - `packages/core/src/task-store.ts`
+  - `packages/core/src/heartbeat.ts`
+  - `packages/core/src/recurrence.ts`
+  - `packages/core/src/types.ts`
+  - `packages/core/src/index.ts`
+  - `tests/core.test.mjs`
+  - `tests/fixtures/heartbeat-roundtrip.md`
+  - `data/HEARTBEAT.md`
+  - `apps/api/src/index.ts`
+
+### Changes Made
+
+- Added optional `bodyText?: string` to shared `Task`
+- Updated parser/render/validation so task-block free text between YAML fence and `<!-- open-memo:task:end -->` is preserved
+- Kept `bodyText` out of `TASK_FIELD_ORDER` and out of YAML serialization
+- Clarified `waiting_ack` enter/exit conditions in `docs/contracts.md`
+- Expanded core tests from 3 to 14
+  - createTask
+  - deleteTask
+  - waiting_ack
+  - expired snooze behavior
+  - malformed parser input
+  - missing field parser input
+  - recurrence daily / weekly / none
+  - multiline bodyText round-trip
+  - classifier grouping
+- Added `packages/core/src/task-classifier.ts`
+  - `classifyTasks(tasks, now?)`
+  - buckets: `today`, `overdue`, `snoozed`, `done`, `upcoming`
+- Exported classifier from `packages/core/src/index.ts`
+- Added API route `GET /tasks/classified`
+- Hardened `atomicWriteFile()`
+  - same temp-file strategy as before
+  - retry `rename()` on `EPERM` / `EBUSY`
+  - retry delays: `100ms`, `200ms`, `300ms`
+  - never deletes the original target file
+  - removes temp file on final failure and throws clearer error text
+
+### Verification Per Task
+
+- After P1-1 bodyText fix:
+  - `pnpm build` passed
+  - `pnpm test` passed after fixing one extra newline bug in renderer
+- After contract clarification + test expansion:
+  - `pnpm build` passed
+  - `pnpm test` passed with `13` tests
+- After classifier + API route:
+  - `pnpm build` passed
+  - `pnpm test` passed with `14` tests
+- After atomic write retry hardening:
+  - `pnpm build` passed
+  - `pnpm test` passed with `14` tests
+
+### Notes For Next Agent
+
+- `bodyText` now survives parse -> modify -> render -> save for existing task blocks
+- `bodyText` is storage-only block content, not a YAML field and not patchable through current mutable field lists
+- `GET /tasks/classified` groups `due` and `waiting_ack` into `today`
+- `paused` and `cancelled` tasks are currently not included in any classifier bucket except `done` for explicit `status=done`
+- `docs/phase3-plan.md` should be added if it is expected to remain the canonical plan document
+
+## Phase-3 Classifier Fix Round - 2026-03-23
+
+### Scope
+
+- Fix API-facing classifier output so `upcoming` tasks are also returned inside `today`
+- Do not change `packages/core`
+- Do not change `apps/web`
+
+### Change Made
+
+- Updated `GET /tasks/classified` in `apps/api/src/index.ts`
+  - load tasks
+  - call `classifyTasks(tasks)`
+  - merge `classified.upcoming` into `classified.today`
+  - return the merged payload unchanged otherwise
+
+### Why
+
+- Core keeps `dueAt = null` active tasks in `upcoming`, which is semantically correct
+- Existing user-facing expectation is that newly created no-deadline tasks should appear in Today immediately
+- API is the narrowest compatibility layer for that adjustment
+
+### Verification
+
+- Ran `pnpm build`
+- Ran `pnpm test`
+- Verified `GET /tasks/classified`
+  - created a no-`dueAt` task
+  - confirmed it appeared in `today`
+  - confirmed it still also existed in `upcoming`, which is acceptable for the current API compatibility shim
+- Verified with `agent-browser`
+  - opened the local web app
+  - created task `codex classifier fix browser test`
+  - confirmed it appeared in the Today section immediately
+  - refreshed the page
+  - confirmed it still appeared after refresh
+- Removed the verification task after the check
+
+### Important Note
+
+- Current `apps/web/src/App.tsx` still fetches `/tasks`, not `/tasks/classified`
+- So the browser verification proves create/persist/reload behavior is intact
+- The direct proof for this classifier fix itself is the `GET /tasks/classified` response check above

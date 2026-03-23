@@ -72,6 +72,7 @@ export function validateTask(task: Task, context = "task"): Task {
   assertSingleLineString(task.id, `${context}.id`);
   assertSingleLineString(task.title, `${context}.title`);
   assertString(task.detail, `${context}.detail`);
+  assertOptionalString(task.bodyText, `${context}.bodyText`);
 
   if (!TASK_STATUSES.has(task.status)) {
     throw new Error(`Invalid ${context}.status: ${task.status}`);
@@ -103,11 +104,15 @@ export function validateTask(task: Task, context = "task"): Task {
     throw new Error(`Invalid ${context}.source: ${task.source}`);
   }
 
-  return { ...task, channels: [...task.channels], tags: [...task.tags] };
+  return {
+    ...task,
+    channels: [...task.channels],
+    tags: [...task.tags]
+  };
 }
 
 function parseTaskBlock(blockContent: string, blockIndex: number): Task {
-  const yamlPattern = /```yaml\n([\s\S]*?)\n```/;
+  const yamlPattern = /^```yaml\n([\s\S]*?)\n```([\s\S]*)$/;
   const yamlMatch = yamlPattern.exec(normalizeLineEndings(blockContent));
 
   if (!yamlMatch) {
@@ -115,7 +120,7 @@ function parseTaskBlock(blockContent: string, blockIndex: number): Task {
   }
 
   const record = parseYamlLikeMap(yamlMatch[1], blockIndex);
-  return parseTaskRecord(record, blockIndex);
+  return parseTaskRecord(record, blockIndex, parseBodyText(yamlMatch[2]));
 }
 
 function parseYamlLikeMap(yaml: string, blockIndex: number): TaskRecord {
@@ -177,7 +182,11 @@ function parseYamlLikeMap(yaml: string, blockIndex: number): TaskRecord {
   return record;
 }
 
-function parseTaskRecord(record: TaskRecord, blockIndex: number): Task {
+function parseTaskRecord(
+  record: TaskRecord,
+  blockIndex: number,
+  bodyText?: string
+): Task {
   const knownFields = new Set<string>(TASK_FIELD_ORDER);
   for (const fieldName of Object.keys(record)) {
     if (!knownFields.has(fieldName)) {
@@ -189,6 +198,7 @@ function parseTaskRecord(record: TaskRecord, blockIndex: number): Task {
     id: expectString(record.id, `Task block ${blockIndex}.id`),
     title: expectString(record.title, `Task block ${blockIndex}.title`),
     detail: expectString(record.detail, `Task block ${blockIndex}.detail`),
+    bodyText,
     status: expectTaskStatus(record.status, `Task block ${blockIndex}.status`),
     priority: expectTaskPriority(record.priority, `Task block ${blockIndex}.priority`),
     dueAt: expectNullableString(record.dueAt, `Task block ${blockIndex}.dueAt`),
@@ -231,13 +241,16 @@ function renderTaskBlock(task: Task): string {
     yamlLines.push(`${fieldName}: ${renderScalar(value)}`);
   }
 
-  return [
-    TASK_BLOCK_START,
-    YAML_FENCE_START,
-    ...yamlLines,
-    YAML_FENCE_END,
-    TASK_BLOCK_END
-  ].join("\n");
+  const yamlBlock = [TASK_BLOCK_START, YAML_FENCE_START, ...yamlLines, YAML_FENCE_END].join(
+    "\n"
+  );
+  const bodyText = task.bodyText ?? "";
+
+  return `${yamlBlock}${bodyText}\n${TASK_BLOCK_END}`;
+}
+
+function parseBodyText(rawBodyText: string): string | undefined {
+  return /\S/.test(rawBodyText) ? rawBodyText : undefined;
 }
 
 function parseScalar(rawValue: string): unknown {
@@ -394,6 +407,14 @@ function assertString(value: unknown, context: string): void {
   if (typeof value !== "string") {
     throw new Error(`Invalid ${context}: expected string.`);
   }
+}
+
+function assertOptionalString(value: unknown, context: string): void {
+  if (value === undefined) {
+    return;
+  }
+
+  assertString(value, context);
 }
 
 function assertSingleLineString(value: string, context: string): void {
