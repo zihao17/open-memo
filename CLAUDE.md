@@ -25,16 +25,22 @@ Open Memo is a Windows-first, local-first, ultra-light personal memo and reminde
 - Keep Windows-first behavior in mind.
 
 ## Current development phase
-M0 Phase-1 completed.
-Next step is M0 Phase-2 integration.
+M0 Phase-2 completed.
+Next step is M0 Phase-3 stabilization.
 
-## Phase-2 priorities
-1. Connect apps/api to packages/core
-2. Replace mock task operations with TaskStore-backed operations
-3. Connect heartbeat output to NotifierRouter
-4. Keep provider/chatbridge as stub for now
+## Phase-3 priorities
+1. Fix free-form body text loss (P1-1) - bodyText preserved as-is
+2. Add test coverage (12+ tests)
+3. Unify web/core grouping semantics via API
+4. Harden Windows atomic write (P1-2) - retry only, never delete target file
+5. Integrations stability review
 
-## Known follow-ups
+## Known follow-ups (carried to Phase-3)
 - Preserve free-form task body text in HEARTBEAT.md round-trip
 - Strengthen Windows atomic write behavior
 - Unify task runtime grouping semantics between web and core
+
+## Phase-3 does NOT include
+- Real provider/notifier integration
+- New UI features
+- Recurring task auto-advance
