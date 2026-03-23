@@ -11,6 +11,9 @@ importers:
       '@types/node':
         specifier: ^24.5.2
         version: 24.12.0
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -73,7 +76,11 @@ importers:
 
   packages/core: {}
 
-  packages/integrations: {}
+  packages/integrations:
+    dependencies:
+      '@open-memo/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/shared: {}
 

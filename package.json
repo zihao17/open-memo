@@ -8,10 +8,12 @@
     "build": "tsc -p packages/shared/tsconfig.json && tsc -p packages/core/tsconfig.json && tsc -p packages/integrations/tsconfig.json && tsc -p apps/api/tsconfig.json && tsc -p apps/web/tsconfig.json",
     "typecheck": "pnpm build",
     "test": "pnpm build && node --test tests/core.test.mjs",
-    "heartbeat:once": "pnpm build && node packages/core/dist/cli/heartbeat-once.js"
+    "heartbeat:once": "pnpm build && node packages/core/dist/cli/heartbeat-once.js",
+    "smoke": "tsx packages/integrations/src/demo/smoke.ts"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
+    "tsx": "^4.19.0",
     "typescript": "^5.8.2"
   }
 }
