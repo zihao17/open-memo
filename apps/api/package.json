@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@open-memo/core": "workspace:*",
+    "@open-memo/integrations": "workspace:*",
     "@open-memo/shared": "workspace:*",
     "cors": "^2.8.5",
     "express": "^4.19.2"

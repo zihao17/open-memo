@@ -20,6 +20,12 @@ importers:
 
   apps/api:
     dependencies:
+      '@open-memo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@open-memo/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       '@open-memo/shared':
         specifier: workspace:*
         version: link:../../packages/shared

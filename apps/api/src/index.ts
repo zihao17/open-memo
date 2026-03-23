@@ -1,104 +1,111 @@
-import express from 'express';
-import cors from 'cors';
-import { Task, TaskPatch } from '@open-memo/shared';
+import path from "node:path";
+
+import express from "express";
+import cors from "cors";
+
+import { runHeartbeatOnce, TaskStore } from "@open-memo/core";
+import { NotifierRouter } from "@open-memo/integrations";
+import { Task, TaskPatch } from "@open-memo/shared";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Mock Data
-let tasks: Task[] = [
-  {
-    id: 't-1',
-    title: 'Review M0 design doc',
-    detail: 'Need to review the design document for phase 1.',
-    status: 'active',
-    priority: 'p1',
-    dueAt: new Date(Date.now() + 1000 * 60 * 60).toISOString(), // 1 hour later
-    timezone: 'Asia/Shanghai',
-    recurrence: 'none',
-    snoozeUntil: null,
-    confirmRequired: false,
-    channels: ['system'],
-    tags: ['work'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    source: 'manual',
-  },
-  {
-    id: 't-2',
-    title: 'Fix typo in UI.md',
-    detail: '',
-    status: 'done',
-    priority: 'p2',
-    dueAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // yesterday
-    timezone: 'Asia/Shanghai',
-    recurrence: 'none',
-    snoozeUntil: null,
-    confirmRequired: false,
-    channels: ['system'],
-    tags: ['chore'],
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
-    updatedAt: new Date().toISOString(),
-    source: 'manual',
+const HEARTBEAT_PATH = path.resolve("../../data/HEARTBEAT.md");
+const taskStore = new TaskStore(HEARTBEAT_PATH);
+const notifierRouter = new NotifierRouter();
+
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("was not found");
+}
+
+app.get("/tasks", async (req, res) => {
+  try {
+    const tasks = await taskStore.loadTasks();
+    res.json(tasks);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
   }
-];
-
-app.get('/tasks', (req, res) => {
-  res.json(tasks);
 });
 
-app.post('/tasks', (req, res) => {
-  const newTask: Task = {
-    id: `t-${Date.now()}`,
-    title: req.body.title || 'New Task',
-    detail: req.body.detail || '',
-    status: 'active',
-    priority: req.body.priority || 'p2',
-    dueAt: req.body.dueAt || null,
-    timezone: req.body.timezone || 'UTC',
-    recurrence: req.body.recurrence || 'none',
-    snoozeUntil: req.body.snoozeUntil || null,
-    confirmRequired: req.body.confirmRequired || false,
-    channels: req.body.channels || ['system'],
-    tags: req.body.tags || [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    source: req.body.source || 'ui',
-  };
-  tasks.push(newTask);
-  res.status(201).json(newTask);
-});
+app.post("/tasks", async (req, res) => {
+  try {
+    const now = new Date().toISOString();
+    const newTask: Task = {
+      id: `t-${Date.now()}`,
+      title: req.body.title || "New Task",
+      detail: req.body.detail || "",
+      status: req.body.status || "active",
+      priority: req.body.priority || "p2",
+      dueAt: req.body.dueAt || null,
+      timezone: req.body.timezone || "UTC",
+      recurrence: req.body.recurrence || "none",
+      snoozeUntil: req.body.snoozeUntil || null,
+      confirmRequired: req.body.confirmRequired || false,
+      channels: req.body.channels || ["system"],
+      tags: req.body.tags || [],
+      createdAt: now,
+      updatedAt: now,
+      source: req.body.source || "ui"
+    };
 
-app.patch('/tasks/:id', (req, res) => {
-  const taskId = req.params.id;
-  const patch: TaskPatch = req.body;
-  
-  const taskIndex = tasks.findIndex(t => t.id === taskId);
-  if (taskIndex === -1) {
-    return res.status(404).json({ error: 'Task not found' });
+    const createdTask = await taskStore.createTask(newTask);
+    res.status(201).json(createdTask);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
   }
+});
 
-  // Update fields conditionally based on patch.changes
-  const currentTask = tasks[taskIndex];
-  const updatedTask = { ...currentTask };
-  
-  if (patch.changes) {
-    Object.assign(updatedTask, patch.changes);
-    updatedTask.updatedAt = new Date().toISOString();
+app.patch("/tasks/:id", async (req, res) => {
+  try {
+    const patch = req.body as TaskPatch;
+    const updatedTask = await taskStore.updateTask(req.params.id, {
+      ...(patch.changes ?? {}),
+      source: patch.source ?? "ui",
+      updatedAt: new Date().toISOString()
+    });
+
+    res.json(updatedTask);
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+
+    res.status(500).json({ error: String(error) });
   }
-
-  tasks[taskIndex] = updatedTask;
-  res.json(updatedTask);
 });
 
-app.delete('/tasks/:id', (req, res) => {
-  const taskId = req.params.id;
-  tasks = tasks.filter(t => t.id !== taskId);
-  res.status(204).send();
+app.delete("/tasks/:id", async (req, res) => {
+  try {
+    await taskStore.deleteTask(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+
+    res.status(500).json({ error: String(error) });
+  }
 });
 
-app.get('/today-brief', (req, res) => {
+app.post("/heartbeat/once", async (req, res) => {
+  try {
+    const result = await runHeartbeatOnce({
+      heartbeatFilePath: HEARTBEAT_PATH,
+      now: req.body.now || new Date().toISOString()
+    });
+    const notifyResults = await notifierRouter.routeBatch(
+      result.decision.notifications
+    );
+    res.json({ heartbeat: result, notifications: notifyResults });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.get("/today-brief", (req, res) => {
   res.json({
     brief: "Hello! You have some tasks lined up for today, including reviewing the M0 design doc. Let me know if you want to reschedule anything."
   });
@@ -106,5 +113,5 @@ app.get('/today-brief', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`Open Memo Mock API running on port ${PORT}`);
+  console.log(`Open Memo API running on port ${PORT}`);
 });

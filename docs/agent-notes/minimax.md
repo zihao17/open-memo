@@ -491,3 +491,101 @@ pnpm typecheck
 3. **不要改 core**：职责边界是 integrations，不要动 packages/core
 4. **不要做 web/ui**：integrations 是底层抽象，不做界面
 5. **如果不确定就问**：用户在会话中，明确要求了才动
+
+---
+
+## 本轮 integrations review 结果
+
+**审查日期:** 2026-03-23
+**审查者:** minimax (integrations review agent)
+**审查对象:** `apps/api/src/index.ts` (heartbeat 端点，集成 NotifierRouter 的位置)
+
+### 审查结论: **通过** ✅
+
+类型层面完全匹配，接口契约正确。
+
+### 逐项审查结果
+
+#### 1. NotifierRouter 调用正确性 ✅
+
+| 项目 | 值 |
+|------|-----|
+| `result.decision.notifications` 类型 | `NotifyPayload[]` (shared/types.ts:82) |
+| `routeBatch()` 参数类型 | `NotifyPayload[]` (router.ts:72) |
+| **结论** | **类型完全匹配** |
+
+#### 2. NotifyPayload 结构 ✅
+
+core/heartbeat.ts:62-71 构造的字段与 shared/types.ts:62-70 完全对应：
+
+| 字段 | 类型 | 构造值 | 匹配 |
+|------|------|--------|------|
+| `taskId` | `string` | `task.id` | ✅ |
+| `title` | `string` | `task.title` | ✅ |
+| `body` | `string` | `task.detail \|\| task.title` | ✅ |
+| `channel` | `NotificationChannel` | `channel` (from task.channels) | ✅ |
+| `urgency` | `NotificationUrgency` | `getNotificationUrgency(task.priority, state)` | ✅ |
+| `deepLink` | `string \| null` | `null` | ✅ |
+| `dedupeKey` | `string` | `` `${task.id}:${channel}:${state}:${task.updatedAt}` `` | ✅ |
+
+#### 3. NotificationChannel 路由覆盖 ✅
+
+| Channel 值 | router.ts switch case | 覆盖 |
+|------------|----------------------|------|
+| `system` | case "system": ✅ | ✅ |
+| `browser` | case "browser": ✅ | ✅ |
+| `ai_chat` | case "ai_chat": ✅ | ✅ |
+
+使用 `never` 穷尽检查 (router.ts:58)，后续新增 channel 会有编译时警告。
+
+#### 4. 错误处理 ⚠️ 小问题（可选改进）
+
+**现状:**
+- `routeBatch` 无独立 try-catch，单条通知失败会冒泡导致整批失败
+- 所有 notifier 当前实现为同步 `console.log`，实际运行时崩溃概率低
+- API 层未记录 `notifyResults` 详情（哪些成功/失败）
+
+**风险:** 如果后续 notifier 实现改为真正的异步 I/O（如真实系统通知、Web Push），单条失败可能导致整批回滚
+
+**建议:** 可在 API 层添加结果日志（可选，不阻塞当前集成）:
+```typescript
+console.log("[heartbeat] notify results:", notifyResults);
+```
+
+#### 5. NotifierRouter 默认配置 ✅
+
+`new NotifierRouter()` 无参调用时所有 notifier 默认启用 (`enabled: true`)，符合 Phase-2 "stub for now" 的设计预期。
+
+#### 6. 潜在问题
+
+| 问题 | 严重度 | 说明 |
+|------|--------|------|
+| 单条失败导致整批中断 | 低 | 当前实现为同步日志，影响有限 |
+| API 层无通知结果日志 | 低 | 调试时难以追踪 |
+| Switch 穷尽检查的 default 分支返回 `success: false` 但外层无法感知 | 低 | TypeScript 编译期保护 |
+
+**无类型不匹配风险，无运行时高风险崩溃点。**
+
+### 总结
+
+| 维度 | 状态 |
+|------|------|
+| 类型安全 | ✅ 完全匹配 |
+| 接口契约 | ✅ 正确 |
+| Channel 路由覆盖 | ✅ 完整 |
+| 默认配置 | ✅ 合理 |
+| 错误处理 | ⚠️ 建议增强日志（可选） |
+
+**整体评价:** 当前实现可以作为 stub 继续推进 M0 Phase-2 集成。类型层面的正确性已确认，运行时风险在 stub 阶段可控。
+
+### 审查的文件清单
+
+| 文件 | 关键审查点 |
+|------|-----------|
+| `apps/api/src/index.ts` | heartbeat 端点调用 `notifierRouter.routeBatch()` |
+| `packages/integrations/src/notifier/router.ts` | `routeBatch` 参数类型、switch case 覆盖 |
+| `packages/integrations/src/notifier/system.ts` | `NotifyPayload` 字段使用 |
+| `packages/integrations/src/notifier/browser.ts` | `NotifyPayload` 字段使用 |
+| `packages/integrations/src/notifier/ai-chat.ts` | `NotifyPayload` 字段使用 |
+| `packages/shared/src/types.ts` | `NotifyPayload`、`HeartbeatDecision`、`NotificationChannel` 定义 |
+| `packages/core/src/heartbeat.ts` | `NotifyPayload` 构造位置（第 62-71 行） |
