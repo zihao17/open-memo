@@ -6,9 +6,26 @@ const API_URL = 'http://localhost:3001';
 // We'll keep things simple and just have everything in App.tsx for M0
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [todayTasks, setTodayTasks] = useState<Task[]>([]);
+  const [overdueTasks, setOverdueTasks] = useState<Task[]>([]);
+  const [snoozedTasks, setSnoozedTasks] = useState<Task[]>([]);
+  const [doneTasks, setDoneTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [brief, setBrief] = useState('');
+
+  const fetchClassifiedTasks = async () => {
+    try {
+      const res = await fetch(`${API_URL}/tasks/classified`);
+      const data = await res.json();
+      setTodayTasks(data.today);
+      setOverdueTasks(data.overdue);
+      setSnoozedTasks(data.snoozed);
+      setDoneTasks(data.done);
+    } catch (e) {
+      console.error('Failed to fetch classified tasks', e);
+    }
+  };
 
   const fetchTasks = async () => {
     try {
@@ -33,6 +50,7 @@ function App() {
   useEffect(() => {
     fetchTasks();
     fetchBrief();
+    fetchClassifiedTasks();
   }, []);
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -48,6 +66,7 @@ function App() {
       const newTask = await res.json();
       setTasks([...tasks, newTask]);
       setNewTaskTitle('');
+      fetchClassifiedTasks();
     } catch (e) {
       console.error('Failed to create task', e);
     }
@@ -69,6 +88,7 @@ function App() {
       });
       const updatedTask = await res.json();
       setTasks(tasks.map(t => t.id === id ? updatedTask : t));
+      fetchClassifiedTasks();
     } catch (e) {
       console.error('Failed to patch task', e);
     }
@@ -94,38 +114,13 @@ function App() {
     try {
       await fetch(`${API_URL}/tasks/${id}`, { method: 'DELETE' });
       setTasks(tasks.filter(t => t.id !== id));
+      fetchClassifiedTasks();
     } catch (e) {
       console.error('Failed to delete task', e);
     }
   };
 
-  // Group tasks
-  const now = new Date();
-  
-  const todayTasks = tasks.filter(t => {
-    if (t.status === 'done') return false;
-    if (t.snoozeUntil && new Date(t.snoozeUntil) > now) return false;
-    if (t.dueAt) {
-      const due = new Date(t.dueAt);
-      // Simplify logic: if it's due today or in the future
-      return due >= now || due.toDateString() === now.toDateString();
-    }
-    // If no due date, count as today
-    return true;
-  });
-
-  const overdueTasks = tasks.filter(t => {
-    if (t.status === 'done') return false;
-    if (t.snoozeUntil && new Date(t.snoozeUntil) > now) return false;
-    if (t.dueAt) {
-      const due = new Date(t.dueAt);
-      return due < now && due.toDateString() !== now.toDateString();
-    }
-    return false;
-  });
-
-  const doneTasks = tasks.filter(t => t.status === 'done');
-  const snoozedTasks = tasks.filter(t => t.snoozeUntil && new Date(t.snoozeUntil) > now && t.status !== 'done');
+  // Group tasks handled by classified API
 
 
   const renderTask = (task: Task) => (

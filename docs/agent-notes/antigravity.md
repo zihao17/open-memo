@@ -7,8 +7,15 @@
 ## Scope
 M0 Phase-1 的前端控制台外壳原型及极简 Mock API。
 M0 Phase-2 的 Web 与 Core API 兼容性验证。
+M0 Phase-3 (Task 3B) 的 Web 前端分组架构升级。
 
-## Completed in this round (Phase-2 Web Validation)
+## Completed in this round (Phase-3 Web Adaptation)
+- 移除了 `App.tsx` 中的本地 `Date().now()` 与前端 `filter` 实现。
+- 完全接入来自后端 `/tasks/classified` 的分组数据下发（`today`, `overdue`, `snoozed`, `done`），新增 `fetchClassifiedTasks()` 接口以接手所有的渲染。
+- 确保所有的修改型操作 (`handleCreateTask`, `patchTask`, `deleteTask`) 都可以驱动全量刷新最新的远端分组映射。
+- **发现的大坑/优化点记录**：在遵守原定需求方案进行 4 个分组 (today, overdue, snoozed, done) 映射时，新创建的缺省任务会被 Core `classifyTasks` 划分到 `upcoming` 分组中（因为没有 dueDate），由于目前需求未将 `upcoming` 合并入并展现给 UI 端，新增加的任务会短暂“隐身”。建议下一阶段合并 `upcoming` 或是设立独立的渲染区。
+
+## Completed in previous round (Phase-2 Web Validation)
 - 对比了改动后的 `@open-memo/api` (p2-core) 和 `@open-memo/web` 的接口契约。
 - 确认 `App.tsx` 发出的 PATCH `body` (包含 `taskId`, `changes`, `source`) 完全兼容 Core API 中基于 `TaskPatch` 的验证逻辑。
 - 确认 POST 任务时 Web 缺省的字段均由 Core API 分配默认值，二者无缝对接。
@@ -49,4 +56,5 @@ M0 Phase-2 的 Web 与 Core API 兼容性验证。
 - 分组管理日后可调整为双端数据同源约定。后端返回分组好的对象结果。
 
 ## Suggested next step
+- 修正目前阶段 `upcoming` 状态任务在前端不显示的状况（渲染合并或新增列表）。
 - 与真实 `integrations` 包进行对话能力对接。将 Mock 的聊天功能与真实的外部模型以及工具调用逻辑对应。
