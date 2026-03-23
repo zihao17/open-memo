@@ -831,3 +831,76 @@ Secondary step after that:
 Use this prompt to resume work cleanly:
 
 `继续在 feat/core-m0 worktree 的 packages/core 上工作。先阅读 docs/agent-notes/codex.md、docs/core-followups.md、docs/contracts.md。当前已完成 HEARTBEAT parser/render/store/heartbeat:once 最小链路，当前最大已知问题是任务块自由正文说明不会被保留。请先实现 P1-1：在不破坏现有 Task 公共契约的前提下，让 parse -> modify -> render -> save 后仍能保留任务块内 YAML 之外的自由正文说明，并补对应测试。`
+
+## Phase-2 Integration Round - 2026-03-23
+
+### Worktree
+
+- Worktree label: `feat/p2-core`
+- Local path: `E:\AI\open\open-memo.worktrees\feat\p2-core`
+- Agent: `codex`
+- Scope for this round: wire `apps/api` to real core storage and heartbeat output without changing API URLs or success response shapes
+
+### Context Read Before Changes
+
+- `docs/handoff-2026-03-22.md`
+- `docs/contracts.md`
+- `docs/architecture.md`
+- `packages/shared/src/types.ts`
+- `apps/api/src/index.ts`
+- `packages/core/src/task-store.ts`
+- `packages/core/src/heartbeat.ts`
+- `packages/core/src/types.ts`
+- `packages/integrations/src/notifier/router.ts`
+- `packages/integrations/src/index.ts`
+- `data/HEARTBEAT.md`
+
+### Changes Made
+
+- Replaced the in-memory `tasks` array in `apps/api/src/index.ts` with a real `TaskStore` instance pointing to `../../data/HEARTBEAT.md`
+- Converted `GET /tasks`, `POST /tasks`, `PATCH /tasks/:id`, and `DELETE /tasks/:id` to async handlers backed by `TaskStore`
+- Preserved current API shape:
+  - `GET /tasks` still returns `Task[]`
+  - `POST /tasks` still returns the created `Task`
+  - `PATCH /tasks/:id` still accepts a `TaskPatch`-shaped body and returns the updated `Task`
+  - `DELETE /tasks/:id` still returns `204`
+- Added defensive `try/catch` handling with `500` error responses, while keeping `404` for missing task update/delete cases
+- Added `POST /heartbeat/once`
+  - calls `runHeartbeatOnce({ heartbeatFilePath, now })`
+  - sends `result.decision.notifications` through `new NotifierRouter().routeBatch(...)`
+  - returns `{ heartbeat: result, notifications: notifyResults }`
+- Added missing workspace dependencies to `apps/api/package.json`:
+  - `@open-memo/core`
+  - `@open-memo/integrations`
+
+### Verification Performed
+
+- Ran `pnpm install`
+- Ran `pnpm build`
+- Started API with `pnpm --filter @open-memo/api dev` through a temporary PowerShell smoke script
+- Verified `GET /tasks`
+  - returned 5 tasks from `data/HEARTBEAT.md`
+  - ids observed:
+    - `task-renew-passport`
+    - `task-call-landlord`
+    - `task-daily-water`
+    - `task-weekly-review`
+    - `task-submit-expense`
+- Verified `POST /tasks`
+  - created a new task through API
+  - confirmed a new task block was written into `data/HEARTBEAT.md`
+- Verified `PATCH /tasks/:id`
+  - updated the created task title and priority
+  - confirmed the rendered Markdown file reflected the new values
+- Verified `DELETE /tasks/:id`
+  - removed the created task
+  - confirmed the task block no longer existed in `data/HEARTBEAT.md`
+- Verified `POST /heartbeat/once` with `now=2026-03-23T12:00:30+08:00`
+  - returned `dueTaskIds = ["task-renew-passport"]`
+  - returned `overdueTaskIds = ["task-call-landlord", "task-daily-water", "task-weekly-review", "task-submit-expense"]`
+  - routed 9 notifications with `0` failures
+
+### Cleanup Notes
+
+- The smoke test temporarily mutated `data/HEARTBEAT.md` during POST/PATCH/DELETE verification
+- The file was restored to its pre-test contents after validation, so this round should leave only code/doc/lockfile changes
