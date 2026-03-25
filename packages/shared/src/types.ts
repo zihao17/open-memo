@@ -21,6 +21,7 @@ export interface Task {
   id: string;
   title: string;
   detail: string;
+  bodyText?: string;
   status: TaskStatus;
   priority: TaskPriority;
   dueAt: string | null;

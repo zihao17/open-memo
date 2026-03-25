@@ -23,7 +23,7 @@ createdAt: 2026-03-21T09:00:00+08:00
 updatedAt: 2026-03-21T09:30:00+08:00
 source: manual
 ```
-this note should be ignored by the canonical renderer
+this note should be preserved by the canonical renderer
 <!-- open-memo:task:end -->
 
 <!-- open-memo:task:start -->

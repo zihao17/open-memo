@@ -3,7 +3,7 @@ import path from "node:path";
 import express from "express";
 import cors from "cors";
 
-import { runHeartbeatOnce, TaskStore } from "@open-memo/core";
+import { classifyTasks, runHeartbeatOnce, TaskStore } from "@open-memo/core";
 import { NotifierRouter } from "@open-memo/integrations";
 import { Task, TaskPatch } from "@open-memo/shared";
 
@@ -23,6 +23,17 @@ app.get("/tasks", async (req, res) => {
   try {
     const tasks = await taskStore.loadTasks();
     res.json(tasks);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.get("/tasks/classified", async (req, res) => {
+  try {
+    const tasks = await taskStore.loadTasks();
+    const classified = classifyTasks(tasks);
+    classified.today = [...classified.today, ...classified.upcoming];
+    res.json(classified);
   } catch (error) {
     res.status(500).json({ error: String(error) });
   }

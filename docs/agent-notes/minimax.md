@@ -494,98 +494,112 @@ pnpm typecheck
 
 ---
 
-## 本轮 integrations review 结果
+## 本轮 integrations review 结果 (Phase-3)
 
 **审查日期:** 2026-03-23
 **审查者:** minimax (integrations review agent)
-**审查对象:** `apps/api/src/index.ts` (heartbeat 端点，集成 NotifierRouter 的位置)
+**审查对象:** Phase-3 codex 全部改动对 integrations 的影响
 
-### 审查结论: **通过** ✅
+### 审查结论: **通过 ✅ — integrations 无需改动**
 
-类型层面完全匹配，接口契约正确。
+---
 
-### 逐项审查结果
+### Phase-3 变更清单及影响分析
 
-#### 1. NotifierRouter 调用正确性 ✅
+#### 变更 1: Task 新增 bodyText?: string (shared/types.ts:24)
 
-| 项目 | 值 |
-|------|-----|
-| `result.decision.notifications` 类型 | `NotifyPayload[]` (shared/types.ts:82) |
-| `routeBatch()` 参数类型 | `NotifyPayload[]` (router.ts:72) |
-| **结论** | **类型完全匹配** |
+| 维度 | 分析 |
+|------|------|
+| 类型影响 | `bodyText` 是可选字段，向后完全兼容 |
+| integrations 使用方 | integrations 仅导入 `Task` 作为类型引用，不直接构造 Task 实例 |
+| POST /tasks 构造 | index.ts 构造 Task 时未设置 `bodyText`，但因是可选字段，不报错 |
+
+**结论:** ✅ 无影响
+
+#### 变更 2: heartbeat-markdown.ts parse/render 改造
+
+- `validateTask` 新增 `bodyText` 验证
+- `renderTaskBlock` 在 YAML block 后追加 `bodyText`
+- `parseTaskRecord` 接收并传递 `bodyText`
+
+| 维度 | 分析 |
+|------|------|
+| integrations 使用方 | integrations 不直接调用 parse/render |
+| NotifyPayload | 由 heartbeat.ts 构造，字段不含 `bodyText` |
+
+**结论:** ✅ 无影响，bodyText 不进入 NotifyPayload
+
+#### 变更 3: classifyTasks + /tasks/classified 路由
+
+纯 API 层新功能，调用 `@open-memo/core` 的 `classifyTasks`，与 integrations 包无关。
+
+**结论:** ✅ 无影响
+
+#### 变更 4: Windows 原子写回补强 (task-store.ts)
+
+`atomicWriteFile` 新增重试逻辑，处理 Windows EPERM/EBUSY 错误。TaskStore 是 core 内部实现，integrations 通过 NotifierRouter 调用，不直接接触。
+
+**结论:** ✅ 无影响，透明实现细节
+
+---
+
+### 审查清单逐项确认
+
+#### 1. NotifierRouter 调用链 ✅
+
+| 环节 | 类型 | 状态 |
+|------|------|------|
+| `result.decision.notifications` | `NotifyPayload[]` (shared/types.ts:83) | ✅ 未变 |
+| `routeBatch(payloads)` 参数 | `NotifyPayload[]` (router.ts:72) | ✅ 未变 |
+| 两者匹配 | — | ✅ 完全匹配 |
 
 #### 2. NotifyPayload 结构 ✅
 
-core/heartbeat.ts:62-71 构造的字段与 shared/types.ts:62-70 完全对应：
+Phase-3 改造未触及 heartbeat.ts 的 NotifyPayload 构造，字段完整性与上一轮一致。
 
-| 字段 | 类型 | 构造值 | 匹配 |
-|------|------|--------|------|
-| `taskId` | `string` | `task.id` | ✅ |
-| `title` | `string` | `task.title` | ✅ |
-| `body` | `string` | `task.detail \|\| task.title` | ✅ |
-| `channel` | `NotificationChannel` | `channel` (from task.channels) | ✅ |
-| `urgency` | `NotificationUrgency` | `getNotificationUrgency(task.priority, state)` | ✅ |
-| `deepLink` | `string \| null` | `null` | ✅ |
-| `dedupeKey` | `string` | `` `${task.id}:${channel}:${state}:${task.updatedAt}` `` | ✅ |
+#### 3. NotificationChannel 路由 ✅
 
-#### 3. NotificationChannel 路由覆盖 ✅
+router.ts switch 覆盖 `system`/`browser`/`ai_chat` 三个 channel，未新增 channel，穷尽检查仍然有效。
 
-| Channel 值 | router.ts switch case | 覆盖 |
-|------------|----------------------|------|
-| `system` | case "system": ✅ | ✅ |
-| `browser` | case "browser": ✅ | ✅ |
-| `ai_chat` | case "ai_chat": ✅ | ✅ |
+#### 4. ProviderAdapter 接口 ✅
 
-使用 `never` 穷尽检查 (router.ts:58)，后续新增 channel 会有编译时警告。
+`ProviderStructuredRequest`、`ProviderChatRequest`、`ProviderChatResponse` 均未修改，接口稳定。
 
-#### 4. 错误处理 ⚠️ 小问题（可选改进）
+#### 5. imports 路径 ✅
 
-**现状:**
-- `routeBatch` 无独立 try-catch，单条通知失败会冒泡导致整批失败
-- 所有 notifier 当前实现为同步 `console.log`，实际运行时崩溃概率低
-- API 层未记录 `notifyResults` 详情（哪些成功/失败）
-
-**风险:** 如果后续 notifier 实现改为真正的异步 I/O（如真实系统通知、Web Push），单条失败可能导致整批回滚
-
-**建议:** 可在 API 层添加结果日志（可选，不阻塞当前集成）:
-```typescript
-console.log("[heartbeat] notify results:", notifyResults);
-```
-
-#### 5. NotifierRouter 默认配置 ✅
-
-`new NotifierRouter()` 无参调用时所有 notifier 默认启用 (`enabled: true`)，符合 Phase-2 "stub for now" 的设计预期。
+integrations 导入的 shared 类型路径均为 `@open-memo/shared`，workspace 依赖方式，未受影响。
 
 #### 6. 潜在问题
 
 | 问题 | 严重度 | 说明 |
 |------|--------|------|
-| 单条失败导致整批中断 | 低 | 当前实现为同步日志，影响有限 |
-| API 层无通知结果日志 | 低 | 调试时难以追踪 |
-| Switch 穷尽检查的 default 分支返回 `success: false` 但外层无法感知 | 低 | TypeScript 编译期保护 |
+| POST /tasks 未设置 bodyText | 低 | 可选字段，预期行为 |
+| classifyTasks 返回的 Task 带 bodyText | 低 | API 消费者可自行处理 |
 
-**无类型不匹配风险，无运行时高风险崩溃点。**
+---
 
 ### 总结
 
 | 维度 | 状态 |
 |------|------|
-| 类型安全 | ✅ 完全匹配 |
-| 接口契约 | ✅ 正确 |
-| Channel 路由覆盖 | ✅ 完整 |
-| 默认配置 | ✅ 合理 |
-| 错误处理 | ⚠️ 建议增强日志（可选） |
+| Task.bodyText 可选字段 | ✅ 向后兼容 |
+| NotifyPayload 接口 | ✅ 未变 |
+| NotifierRouter 调用链 | ✅ 未变 |
+| ProviderAdapter 接口 | ✅ 未变 |
+| imports 路径 | ✅ 未变 |
+| 原子写增强 | ✅ 透明 |
 
-**整体评价:** 当前实现可以作为 stub 继续推进 M0 Phase-2 集成。类型层面的正确性已确认，运行时风险在 stub 阶段可控。
+**integrations 无需任何改动。**
 
-### 审查的文件清单
+### Phase-3 审查的文件清单
 
-| 文件 | 关键审查点 |
-|------|-----------|
-| `apps/api/src/index.ts` | heartbeat 端点调用 `notifierRouter.routeBatch()` |
-| `packages/integrations/src/notifier/router.ts` | `routeBatch` 参数类型、switch case 覆盖 |
-| `packages/integrations/src/notifier/system.ts` | `NotifyPayload` 字段使用 |
-| `packages/integrations/src/notifier/browser.ts` | `NotifyPayload` 字段使用 |
-| `packages/integrations/src/notifier/ai-chat.ts` | `NotifyPayload` 字段使用 |
-| `packages/shared/src/types.ts` | `NotifyPayload`、`HeartbeatDecision`、`NotificationChannel` 定义 |
-| `packages/core/src/heartbeat.ts` | `NotifyPayload` 构造位置（第 62-71 行） |
+| 文件 | 关键变更 |
+|------|---------|
+| `packages/shared/src/types.ts` | Task 新增 bodyText?: string |
+| `packages/core/src/heartbeat-markdown.ts` | parse/render 改造支持 bodyText |
+| `packages/core/src/task-classifier.ts` | 新增 classifyTasks 函数 |
+| `packages/core/src/task-store.ts` | atomicWriteFile 重试逻辑 |
+| `apps/api/src/index.ts` | /tasks/classified 路由 |
+| `packages/integrations/src/notifier/router.ts` | 审查调用链是否受影响（无影响） |
+| `packages/integrations/src/provider/openai-compatible.ts` | 审查接口是否受影响（无影响） |
+| `packages/integrations/src/provider/anthropic.ts` | 审查接口是否受影响（无影响） |

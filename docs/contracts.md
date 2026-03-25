@@ -177,7 +177,16 @@ source: manual
 - 运行态是 heartbeat 基于 `status`、`dueAt`、`snoozeUntil`、`confirmRequired` 和当前时间计算出的派生值。
 - 运行态不直接写回持久 `status` 字段。
 - M0 中 `due` 使用固定 60 秒窗口：`now - dueAt < 60s` 视为 `due`，更早的未解决任务视为 `overdue`。
-- 例如，一个 `status=active` 且 `confirmRequired=true`、已过 `dueAt` 但未确认的任务，运行态可被计算为 `waiting_ack`。
+- `waiting_ack` 的进入条件：
+  - `status=active`
+  - `confirmRequired=true`
+  - 没有生效中的 `snoozeUntil`
+  - `dueAt` 已进入 `due` 或 `overdue` 区间
+- `waiting_ack` 的退出条件：
+  - 任务被改为非 `active` 状态，例如 `done`、`paused`、`cancelled`
+  - 任务被重新 snooze，且 `snoozeUntil > now`
+  - `dueAt` 被改到未来，或被清空，从而不再属于 `due/overdue`
+  - `confirmRequired` 被关闭，此时运行态回落为普通 `due` 或 `overdue`
 
 ## 9. 未来各 agent 边界
 

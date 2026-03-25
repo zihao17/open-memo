@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { Task } from "../../shared/dist/index.js";
 
@@ -15,6 +16,8 @@ import type { TaskUpdatePatch } from "./types.js";
 export interface TaskStoreOptions {
   now?: () => string;
 }
+
+const RENAME_RETRY_DELAYS_MS = [100, 200, 300] as const;
 
 export class TaskStore {
   private readonly heartbeatFilePath: string;
@@ -113,12 +116,29 @@ export async function atomicWriteFile(filePath: string, content: string): Promis
     await fileHandle.close();
   }
 
-  try {
-    await rename(tempFilePath, filePath);
-  } catch (error) {
-    await rm(tempFilePath, { force: true });
-    throw error;
+  let renameError: unknown;
+
+  for (const retryDelayMs of [0, ...RENAME_RETRY_DELAYS_MS]) {
+    if (retryDelayMs > 0) {
+      await delay(retryDelayMs);
+    }
+
+    try {
+      await rename(tempFilePath, filePath);
+      return;
+    } catch (error) {
+      renameError = error;
+
+      if (isRetryableRenameError(error) && retryDelayMs !== RENAME_RETRY_DELAYS_MS.at(-1)) {
+        continue;
+      }
+
+      break;
+    }
   }
+
+  await cleanupTempFile(tempFilePath);
+  throw createAtomicWriteRenameError(filePath, tempFilePath, renameError);
 }
 
 function pickAllowedPatchFields(patch: TaskUpdatePatch): TaskUpdatePatch {
@@ -147,5 +167,31 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
     error !== null &&
     "code" in error &&
     error.code === "ENOENT"
+  );
+}
+
+function isRetryableRenameError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === "EPERM" || error.code === "EBUSY")
+  );
+}
+
+async function cleanupTempFile(tempFilePath: string): Promise<void> {
+  await rm(tempFilePath, { force: true });
+}
+
+function createAtomicWriteRenameError(
+  filePath: string,
+  tempFilePath: string,
+  error: unknown
+): Error {
+  const reason =
+    error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
+
+  return new Error(
+    `Failed to atomically replace "${filePath}" with temp file "${tempFilePath}": ${reason}`
   );
 }
