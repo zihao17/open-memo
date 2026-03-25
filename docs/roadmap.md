@@ -26,18 +26,18 @@
 
 | 任务 | 负责人 | 说明 |
 |------|--------|------|
-| Windows Toast 通知 | codex | SystemNotifier 从 stub 改为真实 Windows 原生通知 |
-| Heartbeat 循环进程 | codex | 短命进程定时唤醒扫描，不是 daemon |
-| Recurring 自动推进 | codex | heartbeat 完成后自动将 recurring task 推进到下一次 |
+| Windows Toast 通知 | minimax | SystemNotifier 从 stub 改为真实 Windows 原生通知 |
+| Heartbeat 定时触发 | codex | 生产用 Windows 计划任务，开发调试用 heartbeat:loop |
+| Recurring 自动推进 | codex | 任务完成/确认后才推进 dueAt，过期不自动滚走 |
 | 前端适配 | gemini | 无大的 UI 变化，确认不影响现有功能 |
-| review | minimax | 审查 integrations 在真实通知场景下的兼容性 |
+| review | minimax | 审查通知实现的接口兼容性 |
 
-**依赖关系**：Windows 通知是核心，heartbeat 循环依赖通知链路，recurring 是独立的。
+**依赖关系**：Windows 通知是核心，heartbeat 定时触发依赖通知链路，recurring 是独立的。
 
 **验收标准**：
 - 创建一个 1 分钟后的任务 → 1 分钟后 Windows 弹出通知
 - 创建一个 daily recurring 任务 → 完成后自动推进到明天
-- 能通过 `pnpm heartbeat:loop` 启动定时扫描
+- 本地可通过 `pnpm heartbeat:loop` 调试（dev only）
 
 ---
 
@@ -99,34 +99,48 @@ P6  🎯 产品化打磨（自启 + 日志 + 通知优化 + UI）
 
 ## P4 详细拆分（下一步执行）
 
-### P4-1：Windows Toast 通知（codex 负责）
+### P4-1：Windows Toast 通知（minimax 负责）
 
 当前 `packages/integrations/src/notifier/system.ts` 是 stub（只有 console.log）。
 
-改造为：
-- 使用 `node-notifier` 或 Windows 原生 `powershell` 命令弹出 Toast 通知
-- payload.title → 通知标题
-- payload.body → 通知正文
-- payload.urgency → 控制通知优先级
+改造为真实 Windows 原生通知。开工前需锁定：
+- 实现库选型（`node-notifier` / `win-toast-notifier` / PowerShell，择一）
+- `NotificationResult` 的 success/failure 如何返回
+- `urgency` 到 Windows 通知优先级的映射规则
+- deep link 支持（Phase-4 先不支持，可留空）
 
-### P4-2：Heartbeat 循环进程（codex 负责）
+职责边界：
+- minimax：实现 SystemNotifier 真实通知 + NotifierRouter 结果结构维护
+- codex：负责 heartbeat 输出、调度逻辑，不碰 integrations 代码
 
-新增 `packages/core/src/cli/heartbeat-loop.ts`：
-- 读取 HEARTBEAT.md
-- 调用 runHeartbeat() 计算下次唤醒时间
-- 用 setTimeout 等待
-- 到点唤醒，重新扫描
-- 收到 SIGINT 时优雅退出
+### P4-2：Heartbeat 定时触发（codex 负责）
 
-配套新增 package.json script：`"heartbeat:loop": "pnpm build && node packages/core/dist/cli/heartbeat-loop.js"`
+**生产方案**：Windows 计划任务定时调用 `heartbeat:once`。
+- 进程启动 → 读取 HEARTBEAT.md → 计算 → 发通知 → 退出
+- 短命进程，非 daemon 常驻，符合项目"轻量"原则
+- 由操作系统负责调度（Windows Task Scheduler 或类似机制）
+
+**开发调试方案**：`heartbeat:loop`（仅 dev only）
+- 新增 `packages/core/src/cli/heartbeat-loop.ts`
+- `setTimeout` 常驻循环 + SIGINT 优雅退出
+- 文档明确标注"仅用于开发调试，生产环境请使用计划任务"
+- 配套 script：`"heartbeat:loop": "pnpm build && node packages/core/dist/cli/heartbeat-loop.js"`
 
 ### P4-3：Recurring 自动推进（codex 负责）
 
 当前 `runHeartbeat()` 返回 `taskMutations` 但永远是空数组。
 
-改造为：
-- heartbeat 检测到 recurring task 过期后，生成 mutation：推进 dueAt 到下一次
-- heartbeat-loop 在每轮扫描后应用 mutations（通过 TaskStore.updateTask）
+推进条件（旧指挥官修正）：
+- recurring task **只有在完成或确认后**才推进 dueAt 到下一次
+- 过期但未完成/确认的任务**不能**自动滚走，应继续显示为 overdue
+- 具体语义：
+  - `status=done` → 推进 dueAt，重置 status 为 active
+  - `confirmRequired=true` 且用户已确认 → 推进 dueAt
+  - 仅 overdue 而未完成/确认 → 不推进，继续 overdue
+
+实现：
+- heartbeat 在检测到 recurring task 被标记 done 或 acked 后，生成 taskMutation
+- 应用层（heartbeat-loop 或 heartbeat:once 的后续步骤）通过 TaskStore.updateTask 应用 mutation
 
 ### P4-4：前端无感适配（gemini 负责）
 
