@@ -25,22 +25,19 @@ Open Memo is a Windows-first, local-first, ultra-light personal memo and reminde
 - Keep Windows-first behavior in mind.
 
 ## Current development phase
-M0 Phase-2 completed.
-Next step is M0 Phase-3 stabilization.
+M0 Phase-3 completed.
+Next step is M0 Phase-4: 让提醒真正发生。
 
-## Phase-3 priorities
-1. Fix free-form body text loss (P1-1) - bodyText preserved as-is
-2. Add test coverage (12+ tests)
-3. Unify web/core grouping semantics via API
-4. Harden Windows atomic write (P1-2) - retry only, never delete target file
-5. Integrations stability review
+## Phase-4 priorities
+1. Windows Toast 通知（SystemNotifier 从 stub 改为真实通知）
+2. Heartbeat 循环进程（定时唤醒扫描）
+3. Recurring 自动推进（heartbeat 完成后推进 recurring task）
+4. 前端无感适配
+5. Integrations review
 
-## Known follow-ups (carried to Phase-3)
-- Preserve free-form task body text in HEARTBEAT.md round-trip
-- Strengthen Windows atomic write behavior
-- Unify task runtime grouping semantics between web and core
-
-## Phase-3 does NOT include
-- Real provider/notifier integration
-- New UI features
-- Recurring task auto-advance
+## Roadmap
+P1→P2→P3 完成（基础→接线→稳定化）
+P4：让提醒真正发生
+P5：让 AI 聊天可用
+P6：产品化打磨
+详见 docs/roadmap.md
