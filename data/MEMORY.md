@@ -58,3 +58,33 @@
 - bash 中文编码问题：commit message 含中文时 bash 解析失败，用 `git commit -F file.tmp` 解决。
 - Windows 路径分隔符：git bash 对反斜杠解析有问题，用正斜杠或 workdir 参数。
 - worktree remove 时目录非空会失败，用 `git worktree prune` 清理。
+- 旧指挥官的建议通常都是对的，特别是语义细节和边界划分。
+
+### Phase-4 关键决策（2026-03-24）
+
+#### Phase-4 职责划分（旧指挥官修正）
+- minimax 负责 SystemNotifier 真实实现（P4-1），不是 codex。
+- codex 负责 heartbeat 调度（P4-2）和 recurring 推进（P4-3）。
+- gemini 负责前端无感适配（P4-4）。
+- 理由：SystemNotifier 在 packages/integrations，属于 integrations 边界。
+
+#### Recurring 推进条件（旧指挥官修正）
+- 过期不自动滚走，只有完成/确认后才推进 dueAt。
+- status=done → 推进 dueAt，重置 status 为 active。
+- confirmRequired=true 且用户已确认 → 推进 dueAt。
+- 仅 overdue 而未完成/确认 → 不推进，继续 overdue。
+
+#### Heartbeat 定时触发定位（旧指挥官修正）
+- 生产方案：Windows 计划任务定时调用 heartbeat:once（进程跑完就退出）。
+- heartbeat:loop 仅 dev only 调试工具，不能作为生产方案。
+- 符合项目"轻量短命进程"原则，不是 daemon。
+
+#### P4-1 实现锁定（旧指挥官修正）
+- 开工前锁定一个通知库选型，不摇摆。
+- 需定义：库选型、NotificationResult 返回、urgency 映射、deep link 支持。
+
+### Worktree 管理经验
+
+- P4 创建了新 worktree（p4-core、p4-web、p4-integrations），基于最新 main 分支。
+- 旧的 p2-core、p2-web worktree 残留但不再使用。
+- 每个 phase 新建独立 worktree 比复用旧的更安全（避免旧代码残留）。
